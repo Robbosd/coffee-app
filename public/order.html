@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Order Coffee</title>
+  <script src="/socket.io/socket.io.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: #faf7f4;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+
+    .card {
+      background: white;
+      border-radius: 20px;
+      padding: 40px 36px;
+      width: 100%;
+      max-width: 420px;
+      box-shadow: 0 4px 24px rgba(61,35,20,0.10);
+    }
+
+    .logo {
+      text-align: center;
+      font-size: 2.4rem;
+      margin-bottom: 6px;
+    }
+
+    h1 {
+      text-align: center;
+      font-size: 1.4rem;
+      font-weight: 700;
+      color: #3d2314;
+      margin-bottom: 28px;
+    }
+
+    label {
+      display: block;
+      font-size: 0.78rem;
+      font-weight: 600;
+      color: #7a5c4a;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      margin-bottom: 6px;
+    }
+
+    input, select {
+      width: 100%;
+      padding: 12px 14px;
+      border: 2px solid #e8ddd6;
+      border-radius: 10px;
+      font-size: 1rem;
+      color: #3d2314;
+      background: white;
+      margin-bottom: 18px;
+      outline: none;
+      transition: border-color 0.2s;
+      appearance: none;
+    }
+
+    input:focus, select:focus {
+      border-color: #c8914a;
+    }
+
+    .row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+    }
+
+    button {
+      width: 100%;
+      padding: 14px;
+      background: #3d2314;
+      color: white;
+      border: none;
+      border-radius: 12px;
+      font-size: 1rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.2s, transform 0.1s;
+      margin-top: 4px;
+    }
+
+    button:hover { background: #5a3520; }
+    button:active { transform: scale(0.98); }
+
+    /* --- States --- */
+    #screen-form { display: block; }
+    #screen-waiting { display: none; text-align: center; }
+    #screen-countdown { display: none; text-align: center; }
+    #screen-collect { display: none; text-align: center; }
+
+    .status-icon { font-size: 3.5rem; margin-bottom: 14px; }
+
+    .status-title {
+      font-size: 1.3rem;
+      font-weight: 700;
+      color: #3d2314;
+      margin-bottom: 8px;
+    }
+
+    .status-sub {
+      font-size: 0.95rem;
+      color: #7a5c4a;
+      line-height: 1.5;
+    }
+
+    .order-chip {
+      display: inline-block;
+      background: #faf0e6;
+      color: #c8914a;
+      border: 1.5px solid #e8cfa8;
+      border-radius: 20px;
+      padding: 6px 16px;
+      font-size: 0.9rem;
+      font-weight: 600;
+      margin: 14px 0 0;
+    }
+
+    .pulse {
+      display: inline-block;
+      width: 12px; height: 12px;
+      background: #c8914a;
+      border-radius: 50%;
+      margin-right: 8px;
+      animation: pulse 1.4s ease-in-out infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.4; transform: scale(0.7); }
+    }
+
+    /* Countdown ring */
+    .timer-wrap {
+      position: relative;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      margin: 20px 0;
+    }
+
+    .timer-ring { transform: rotate(-90deg); }
+
+    .timer-ring .bg { fill: none; stroke: #f0e6dc; stroke-width: 8; }
+    .timer-ring .progress {
+      fill: none;
+      stroke: #c8914a;
+      stroke-width: 8;
+      stroke-linecap: round;
+      stroke-dasharray: 283;
+      stroke-dashoffset: 0;
+      transition: stroke-dashoffset 1s linear, stroke 0.5s;
+    }
+
+    .timer-text {
+      position: absolute;
+      font-size: 2rem;
+      font-weight: 700;
+      color: #3d2314;
+    }
+
+    .timer-label {
+      font-size: 0.75rem;
+      color: #7a5c4a;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      position: absolute;
+      bottom: 24px;
+    }
+
+    .collect-icon { font-size: 4rem; margin-bottom: 14px; animation: bounce 0.6s ease infinite alternate; }
+    @keyframes bounce { from { transform: translateY(0); } to { transform: translateY(-8px); } }
+
+    .collect-title {
+      font-size: 1.6rem;
+      font-weight: 800;
+      color: #3d2314;
+      margin-bottom: 8px;
+    }
+
+    button.secondary {
+      background: #faf0e6;
+      color: #c8914a;
+      border: 2px solid #e8cfa8;
+      margin-top: 20px;
+    }
+    button.secondary:hover { background: #f5e6d0; }
+  </style>
+</head>
+<body>
+
+<div class="card">
+
+  <!-- FORM -->
+  <div id="screen-form">
+    <div class="logo">☕</div>
+    <h1>Order your coffee</h1>
+
+    <label>Your name</label>
+    <input id="name" type="text" placeholder="e.g. Sarah" autocomplete="off" />
+
+    <label>Drink</label>
+    <select id="drink">
+      <option value="Flat White">Flat White</option>
+      <option value="Latte">Latte</option>
+      <option value="Cappuccino">Cappuccino</option>
+      <option value="Americano">Americano</option>
+      <option value="Espresso">Espresso</option>
+      <option value="Macchiato">Macchiato</option>
+      <option value="Mocha">Mocha</option>
+      <option value="Hot Chocolate">Hot Chocolate</option>
+    </select>
+
+    <div class="row">
+      <div>
+        <label>Size</label>
+        <select id="size">
+          <option value="Regular">Regular</option>
+          <option value="Large">Large</option>
+        </select>
+      </div>
+      <div>
+        <label>Milk</label>
+        <select id="milk">
+          <option value="Full fat">Full fat</option>
+          <option value="Oat">Oat</option>
+          <option value="Almond">Almond</option>
+          <option value="Soy">Soy</option>
+          <option value="Skimmed">Skimmed</option>
+          <option value="None">None</option>
+        </select>
+      </div>
+    </div>
+
+    <button onclick="placeOrder()">Order now</button>
+  </div>
+
+  <!-- WAITING -->
+  <div id="screen-waiting">
+    <div class="status-icon">⏳</div>
+    <div class="status-title">Order sent!</div>
+    <div class="status-sub"><span class="pulse"></span>Waiting for the barista to accept...</div>
+    <div id="waiting-chip" class="order-chip"></div>
+  </div>
+
+  <!-- COUNTDOWN -->
+  <div id="screen-countdown">
+    <div class="status-title" style="margin-bottom:4px">Order accepted!</div>
+    <div class="status-sub">Head down in the next</div>
+
+    <div class="timer-wrap">
+      <svg class="timer-ring" width="120" height="120" viewBox="0 0 100 100">
+        <circle class="bg" cx="50" cy="50" r="45"/>
+        <circle class="progress" id="ring" cx="50" cy="50" r="45"/>
+      </svg>
+      <div>
+        <div class="timer-text" id="timer-display">5:00</div>
+      </div>
+    </div>
+
+    <div class="status-sub" id="countdown-order-chip"></div>
+  </div>
+
+  <!-- COLLECT -->
+  <div id="screen-collect">
+    <div class="collect-icon">🎉</div>
+    <div class="collect-title">Time to grab it!</div>
+    <div class="status-sub">Your coffee is waiting for you at the counter.</div>
+    <button class="secondary" onclick="resetApp()">Order another</button>
+  </div>
+
+</div>
+
+<script>
+  const socket = io();
+  const COUNTDOWN_SECONDS = 5 * 60;
+  let countdownInterval = null;
+  let currentOrder = null;
+
+  function show(screen) {
+    ['form','waiting','countdown','collect'].forEach(s => {
+      document.getElementById('screen-' + s).style.display = s === screen ? 'block' : 'none';
+    });
+  }
+
+  function placeOrder() {
+    const name = document.getElementById('name').value.trim();
+    if (!name) { document.getElementById('name').focus(); return; }
+    const drink = document.getElementById('drink').value;
+    const size = document.getElementById('size').value;
+    const milk = document.getElementById('milk').value;
+    currentOrder = { name, drink, size, milk };
+    socket.emit('place_order', currentOrder);
+  }
+
+  socket.on('order_placed', ({ orderId }) => {
+    currentOrder.id = orderId;
+    const label = `${currentOrder.size} ${currentOrder.drink}${currentOrder.milk !== 'None' ? ', ' + currentOrder.milk : ''}`;
+    document.getElementById('waiting-chip').textContent = label;
+    show('waiting');
+  });
+
+  socket.on('order_accepted', ({ acceptedAt }) => {
+    startCountdown(acceptedAt);
+  });
+
+  function startCountdown(acceptedAt) {
+    const endTime = acceptedAt + COUNTDOWN_SECONDS * 1000;
+    const label = `${currentOrder.size} ${currentOrder.drink}${currentOrder.milk !== 'None' ? ', ' + currentOrder.milk : ''}`;
+    document.getElementById('countdown-order-chip').textContent =
+      `for ${currentOrder.name} — ${label}`;
+    show('countdown');
+
+    const ring = document.getElementById('ring');
+    const CIRCUMFERENCE = 283;
+
+    function tick() {
+      const remaining = Math.max(0, Math.ceil((endTime - Date.now()) / 1000));
+      const mins = Math.floor(remaining / 60);
+      const secs = remaining % 60;
+      document.getElementById('timer-display').textContent =
+        `${mins}:${secs.toString().padStart(2, '0')}`;
+      const fraction = remaining / COUNTDOWN_SECONDS;
+      ring.style.strokeDashoffset = CIRCUMFERENCE * (1 - fraction);
+      ring.style.stroke = fraction > 0.4 ? '#c8914a' : fraction > 0.15 ? '#e07b39' : '#d94f38';
+
+      if (remaining === 0) {
+        clearInterval(countdownInterval);
+        show('collect');
+      }
+    }
+
+    tick();
+    countdownInterval = setInterval(tick, 1000);
+  }
+
+  function resetApp() {
+    if (countdownInterval) clearInterval(countdownInterval);
+    currentOrder = null;
+    document.getElementById('name').value = '';
+    show('form');
+  }
+
+  // Handle Enter key on name field
+  document.getElementById('name').addEventListener('keydown', e => {
+    if (e.key === 'Enter') placeOrder();
+  });
+</script>
+</body>
+</html>

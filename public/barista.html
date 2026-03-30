@@ -1,0 +1,407 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Barista Queue</title>
+  <script src="/socket.io/socket.io.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: #3d2314;
+      min-height: 100vh;
+      padding: 24px 20px;
+    }
+
+    header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 28px;
+      max-width: 520px;
+      margin-left: auto;
+      margin-right: auto;
+    }
+
+    header .logo { font-size: 1.8rem; }
+
+    header h1 {
+      font-size: 1.2rem;
+      font-weight: 700;
+      color: #faf7f4;
+    }
+
+    header .badge {
+      margin-left: auto;
+      background: #c8914a;
+      color: white;
+      border-radius: 20px;
+      padding: 4px 12px;
+      font-size: 0.85rem;
+      font-weight: 700;
+      min-width: 32px;
+      text-align: center;
+    }
+
+    #queue {
+      max-width: 520px;
+      margin: 0 auto;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    .empty {
+      text-align: center;
+      color: #7a5c4a;
+      padding: 60px 20px;
+      font-size: 1rem;
+    }
+
+    .empty-icon { font-size: 2.5rem; margin-bottom: 10px; }
+
+    .order-card {
+      background: white;
+      border-radius: 16px;
+      padding: 20px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      animation: slide-in 0.3s ease;
+    }
+
+    @keyframes slide-in {
+      from { opacity: 0; transform: translateY(-12px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .order-card.accepted {
+      background: #faf7f4;
+      border: 2px solid #e8cfa8;
+    }
+
+    .order-card.collected {
+      opacity: 0.45;
+      transform: scale(0.97);
+      transition: opacity 0.4s, transform 0.4s;
+    }
+
+    .avatar {
+      width: 46px; height: 46px;
+      border-radius: 50%;
+      background: #f5e6d0;
+      color: #c8914a;
+      font-size: 1.2rem;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+
+    .order-card.accepted .avatar {
+      background: #c8914a;
+      color: white;
+    }
+
+    .order-info { flex: 1; min-width: 0; }
+
+    .order-name {
+      font-size: 1rem;
+      font-weight: 700;
+      color: #3d2314;
+      margin-bottom: 3px;
+    }
+
+    .order-drink {
+      font-size: 0.9rem;
+      color: #7a5c4a;
+    }
+
+    .order-time {
+      font-size: 0.75rem;
+      color: #b09080;
+      margin-top: 4px;
+    }
+
+    .order-actions { flex-shrink: 0; }
+
+    .btn-accept {
+      background: #3d2314;
+      color: white;
+      border: none;
+      border-radius: 10px;
+      padding: 10px 18px;
+      font-size: 0.9rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.2s, transform 0.1s;
+      white-space: nowrap;
+    }
+
+    .btn-accept:hover { background: #5a3520; }
+    .btn-accept:active { transform: scale(0.96); }
+
+    .btn-collect {
+      background: #4a7c59;
+      color: white;
+      border: none;
+      border-radius: 10px;
+      padding: 10px 18px;
+      font-size: 0.9rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.2s, transform 0.1s;
+      white-space: nowrap;
+    }
+
+    .btn-collect:hover { background: #3a6045; }
+    .btn-collect:active { transform: scale(0.96); }
+
+    .status-tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      background: #e8f5ed;
+      color: #4a7c59;
+      border-radius: 8px;
+      padding: 6px 12px;
+      font-size: 0.8rem;
+      font-weight: 600;
+    }
+
+    .dot {
+      width: 7px; height: 7px;
+      border-radius: 50%;
+      background: #4a7c59;
+      animation: pulse 1.4s infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; } 50% { opacity: 0.3; }
+    }
+
+    /* Mini countdown on accepted cards */
+    .mini-timer {
+      font-size: 0.8rem;
+      font-weight: 700;
+      color: #c8914a;
+      margin-top: 4px;
+    }
+
+    .ding {
+      position: fixed;
+      top: 20px; left: 50%;
+      transform: translateX(-50%);
+      background: #3d2314;
+      color: white;
+      border-radius: 12px;
+      padding: 12px 24px;
+      font-size: 0.95rem;
+      font-weight: 600;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+      animation: ding-in 0.3s ease;
+      z-index: 100;
+    }
+
+    @keyframes ding-in {
+      from { opacity: 0; transform: translateX(-50%) translateY(-10px); }
+      to { opacity: 1; transform: translateX(-50%) translateY(0); }
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="logo">☕</div>
+  <h1>Barista queue</h1>
+  <div class="badge" id="badge">0</div>
+</header>
+
+<div id="queue">
+  <div class="empty">
+    <div class="empty-icon">🕐</div>
+    No orders yet — waiting...
+  </div>
+</div>
+
+<script>
+  const socket = io();
+  const orders = new Map();
+  const timers = new Map();
+
+  socket.emit('barista_connect');
+
+  socket.on('order_queue', (queue) => {
+    queue.forEach(o => orders.set(o.id, o));
+    renderAll();
+  });
+
+  socket.on('new_order', (order) => {
+    orders.set(order.id, order);
+    renderAll();
+    notify(`New order from ${order.name}!`);
+    playBell();
+  });
+
+  socket.on('order_updated', (order) => {
+    orders.set(order.id, order);
+    renderAll();
+  });
+
+  socket.on('order_cancelled', ({ orderId }) => {
+    orders.delete(orderId);
+    renderAll();
+  });
+
+  function acceptOrder(orderId) {
+    socket.emit('accept_order', { orderId });
+  }
+
+  function markCollected(orderId) {
+    const card = document.querySelector(`[data-id="${orderId}"]`);
+    if (card) card.classList.add('collected');
+    setTimeout(() => {
+      socket.emit('mark_collected', { orderId });
+      orders.delete(orderId);
+      setTimeout(renderAll, 400);
+    }, 300);
+  }
+
+  function formatDrink(o) {
+    let parts = [o.size, o.drink];
+    if (o.milk && o.milk !== 'None') parts.push(o.milk + ' milk');
+    return parts.join(' · ');
+  }
+
+  function timeAgo(ts) {
+    const secs = Math.floor((Date.now() - ts) / 1000);
+    if (secs < 60) return 'just now';
+    return `${Math.floor(secs / 60)}m ago`;
+  }
+
+  function renderAll() {
+    const queue = document.getElementById('queue');
+    const pending = Array.from(orders.values())
+      .filter(o => o.status === 'pending' || o.status === 'accepted')
+      .sort((a, b) => a.placedAt - b.placedAt);
+
+    document.getElementById('badge').textContent = pending.length;
+
+    if (pending.length === 0) {
+      queue.innerHTML = `<div class="empty"><div class="empty-icon">🕐</div>No orders yet — waiting...</div>`;
+      timers.forEach(clearInterval);
+      timers.clear();
+      return;
+    }
+
+    // Keep existing cards, add/update
+    const existingIds = new Set([...queue.querySelectorAll('[data-id]')].map(el => Number(el.dataset.id)));
+    const newIds = new Set(pending.map(o => o.id));
+
+    // Remove cards no longer in queue
+    existingIds.forEach(id => {
+      if (!newIds.has(id)) {
+        const el = queue.querySelector(`[data-id="${id}"]`);
+        if (el) el.remove();
+        if (timers.has(id)) { clearInterval(timers.get(id)); timers.delete(id); }
+      }
+    });
+
+    pending.forEach((order, idx) => {
+      let card = queue.querySelector(`[data-id="${order.id}"]`);
+      if (!card) {
+        card = document.createElement('div');
+        card.dataset.id = order.id;
+        card.className = 'order-card';
+        queue.appendChild(card);
+      }
+
+      card.className = `order-card${order.status === 'accepted' ? ' accepted' : ''}`;
+
+      const initial = order.name.charAt(0).toUpperCase();
+      let actionHtml;
+      let timerHtml = '';
+
+      if (order.status === 'pending') {
+        actionHtml = `<button class="btn-accept" onclick="acceptOrder(${order.id})">Accept</button>`;
+        if (timers.has(order.id)) { clearInterval(timers.get(order.id)); timers.delete(order.id); }
+      } else {
+        actionHtml = `<button class="btn-collect" onclick="markCollected(${order.id})">Collected</button>`;
+        timerHtml = `<div class="mini-timer" id="mini-${order.id}"></div>`;
+        if (!timers.has(order.id)) {
+          const interval = setInterval(() => updateMiniTimer(order.id, order.acceptedAt), 1000);
+          timers.set(order.id, interval);
+          updateMiniTimer(order.id, order.acceptedAt);
+        }
+      }
+
+      card.innerHTML = `
+        <div class="avatar">${initial}</div>
+        <div class="order-info">
+          <div class="order-name">${order.name}</div>
+          <div class="order-drink">${formatDrink(order)}</div>
+          ${timerHtml}
+          <div class="order-time" id="ago-${order.id}">${timeAgo(order.placedAt)}</div>
+        </div>
+        <div class="order-actions">${actionHtml}</div>
+      `;
+    });
+
+    // Update "time ago" every 30s
+    clearTimeout(window._agoTimer);
+    window._agoTimer = setTimeout(() => {
+      queue.querySelectorAll('[data-id]').forEach(card => {
+        const id = Number(card.dataset.id);
+        const order = orders.get(id);
+        if (order) {
+          const el = card.querySelector(`#ago-${id}`);
+          if (el) el.textContent = timeAgo(order.placedAt);
+        }
+      });
+    }, 30000);
+  }
+
+  function updateMiniTimer(orderId, acceptedAt) {
+    const el = document.getElementById(`mini-${orderId}`);
+    if (!el) return;
+    const COUNTDOWN = 5 * 60 * 1000;
+    const remaining = Math.max(0, Math.ceil((acceptedAt + COUNTDOWN - Date.now()) / 1000));
+    if (remaining === 0) {
+      el.textContent = '⚠️ Time up — collect now!';
+      el.style.color = '#d94f38';
+    } else {
+      const m = Math.floor(remaining / 60);
+      const s = remaining % 60;
+      el.textContent = `${m}:${s.toString().padStart(2,'0')} to collect`;
+    }
+  }
+
+  function notify(msg) {
+    const el = document.createElement('div');
+    el.className = 'ding';
+    el.textContent = '☕ ' + msg;
+    document.body.appendChild(el);
+    setTimeout(() => el.remove(), 3000);
+  }
+
+  function playBell() {
+    try {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.frequency.setValueAtTime(880, ctx.currentTime);
+      osc.frequency.exponentialRampToValueAtTime(440, ctx.currentTime + 0.3);
+      gain.gain.setValueAtTime(0.3, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.6);
+      osc.start();
+      osc.stop(ctx.currentTime + 0.6);
+    } catch(e) {}
+  }
+</script>
+</body>
+</html>
